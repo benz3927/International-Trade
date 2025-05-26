@@ -1,0 +1,129 @@
+---
+title: "Example: Download Data for Malawi"
+author: "Kamanga"
+date: 
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  echo = TRUE,
+  cache = TRUE ## cache results to increase performance
+  )
+```
+
+```{r load_packages, include=FALSE}
+# the pacman package loads and install packages, if they are not already installed
+if(!require("pacman")) install.packages("pacman") 
+
+# load packages
+#p_load(comtradr, countrycode, concordance, tidyverse)
+
+# set the working directory
+setwd("/Users/pkamanga/Documents/research/Trade_data/comtrade_download")
+```
+
+## Malawi's Commodity Trade, 2000-2010
+
+Downloading all of Malawi's trade data for the year 2000. Keep in mind that a given file can be a very large download. 
+
+```{r attempt2, include=FALSE}
+# 1. load the comtradr package and the tidyverse package 
+library(comtradr)
+library(tidyverse) 
+# 2. Set your UN Comtrade API key
+# Replace 'YOUR_API_KEY_HERE' with your actual API key
+set_primary_comtrade_key("521d3c7ef2ad4dc48a29c53c3991ca7d")
+
+# 3. Download bulk data
+raw_data <- ct_get_bulk(
+ reporter = "MWI",                     # ISO3 code for Malawi
+ start_date = 2000,
+ end_date = 2010,
+ frequency = "A",                      # Annual data
+ commodity_classification = "HS",      # Harmonized System
+ verbose = TRUE
+)
+
+# keep only HS 4-digit codes
+mwi_0010_df <- subset(raw_data, nchar(cmd_code) == 4) %>%
+  select( # keep only relevant variables
+    period, reporter_code, flow_code, partner_code, cmd_code, qty_unit_code, 
+    qty, is_qty_estimated, net_wgt, cifvalue, fobvalue, primary_value
+  ) %>% # keep only pure exports and pure imports
+  filter(flow_code == "M" | flow_code == "X")
+```
+
+## Commodity descriptions and counntry names 
+The 'concordance' package allows you to get commodity descriptions for 4-digit (or 2-digit or 6-digit) HS codes. 
+
+The "countrycode" package to convert the numeric ISO codes to qualitative ISO codes or actual country names. However, keep in mind you will get an error in that some countries won't match exactly. You may have to fix this error manually. See the next paragraph for the error generated after running the chunk that follows. 
+```{r commodity_descriptions, include=FALSE}
+# load the package 
+library(concordance)
+
+## add commodity descriptions
+mwi_0010_df <- mwi_0010_df %>%      # add the description
+  mutate(com_description = get_desc(sourcevar = cmd_code, origin = "HS")) 
+
+# call the package for adding country codes 
+library(countrycode)
+
+# add ISO3 codes and commodity descriptions
+mwi_0010_df <- mwi_0010_df %>%
+  mutate( # convert to numeric
+    reporter_code = as.numeric(reporter_code),
+    partner_code = as.numeric(partner_code)
+  ) %>% # now add the iso3 codes and country names 
+  mutate(iso3_o = countrycode(reporter_code, origin = "un", destination = "iso3c"),
+         reporter = countrycode(reporter_code, origin = "un", destination = "country.name"),
+         iso3_d = countrycode(partner_code, origin = "un", destination = "iso3c"),
+         partner = countrycode(partner_code, origin = "un", destination = "country.name"))%>%
+  select(period, reporter_code,  flow_code, cmd_code, partner_code, cifvalue, fobvalue,
+         primary_value, reporter, iso3_o, partner, iso3_d, com_description, everything())
+```
+
+The error generated: 
+
+*Some values were not matched unambiguously: 0, 251, 490, 530, 568, 579, 699, 736, 757, 842, 891, 899*
+
+Asking Google or AI for the country names corresponding to these numeric codes is the quickest way of identifying the appropriate names. Keep in mind, however, that not all codes will have exact matches. In the case for Malawi in th year 2000, the countries corresponding to the ISO 3166-1 numeric codes that did not have exact matches is as follows:
+
+ * 0 represents the aggregate (total) trade values
+ * 251: not sure what this one is
+ * 490: Montenegro (Prior to 2006, it was part of Yugoslavia/Serbia and Montenegro)
+ * 530: Netherlands Antilles (This code has been retired. The Netherlands Antilles dissolved in 2010, and its constituent islands now have their own codes, or are part of the Netherlands.)
+ * 568: There is no active ISO 3166-1 numeric code 568.
+ * 579: There is no active ISO 3166-1 numeric code 579.
+ * 699: There is no active ISO 3166-1 numeric code 699. (The 6xx range typically covers various Pacific island nations, but 699 is unassigned in the current standard for countries.)
+ * 736: Sudan (This is an old code that was retired after South Sudan became independent in 2011. The current code for Sudan is 729.)
+ * 757: There is no active ISO 3166-1 numeric code 757.
+ * 842: This is not a valid ISO 3166-1 country code. (The code for the United States of America is 840).
+ * 891: Serbia and Montenegro (also known as Federal Republic of Yugoslavia for an earlier period). This code was assigned after the breakup of the larger SFR Yugoslavia (code 890). It was then used for Serbia and Montenegro until their separation in 2006.
+ * 899: There is no active ISO 3166-1 numeric code 899. (The 8xx range includes codes for areas like South Georgia and the South Sandwich Islands, but 899 is unassigned.)
+ 
+## Clean up the data and export to a local drive 
+```{r data_export, include=FALSE}
+# populate the missing countries 
+mwi_0010_df <- mwi_0010_df %>%
+  mutate(partner = if_else(is.na(partner) & partner_code == 0, "World", partner),
+         partner = if_else(is.na(partner) & partner_code == 530, 
+                           "Netherlands Antilles", partner),
+         partner = if_else(is.na(partner) & partner_code == 736, "Sudan", partner),
+         partner = if_else(is.na(partner) & partner_code == 891, 
+                           "Serbia and Montenegro", partner),
+         partner = if_else(is.na(partner) & partner_code == 842, 
+                           "United States of America", partner),
+         iso3_d = if_else(is.na(iso3_d) & partner_code == 842, "USA", iso3_d),
+         partner = if_else(is.na(partner) & partner_code == 699, "India", partner),
+         iso3_d = if_else(is.na(iso3_d) & partner_code == 699, "IND", iso3_d))
+
+# Load the package for exporting files 
+library(utils)                        # for exporting the data
+
+# Export the data to a local folder specified earlier
+write.csv(mwi_0010_df, "mwi0010.csv", row.names = FALSE)
+```
+ 
+Once you have exported the data to the local drive, you will upload it in the folder I have shared. 
+ 
