@@ -20,7 +20,7 @@ if(!require("pacman")) install.packages("pacman")
 #p_load(comtradr, countrycode, concordance, tidyverse)
 
 # set the working directory
-setwd("/Users/pkamanga/Documents/research/Trade_data/comtrade_download")
+setwd("/Users/CS/Documents/GitHub/International-Trade/data_folders")
 ```
 
 ## Malawi's Commodity Trade, 2000-2010
